@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Note } from '../types';
-import { ZoomIn, ZoomOut, RefreshCw, Share2, MousePointer2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Share2 } from 'lucide-react';
 
 /**
  * NetworkGraph Component
@@ -19,6 +19,11 @@ interface GraphNode extends d3.SimulationNodeDatum {
   title: string;
   group: number;
   tags: string[];
+  // Explicitly defined to satisfy TypeScript when accessing these props
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
 interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -98,7 +103,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ notes, onNoteClick }) => {
             const targetTitle = match[1].toLowerCase();
             const targetId = titleToId.get(targetTitle);
             if (targetId && targetId !== source.id) {
-                links.push({ source: source.id, target: targetId });
+                links.push({ source: source.id, target: targetId } as GraphLink);
             }
         }
     });
