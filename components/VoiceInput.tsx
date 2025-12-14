@@ -20,22 +20,20 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscription, onLoadingChang
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         await processAudio(blob);
-        stream.getTracks().forEach(track => track.stop()); // Stop mic
+        stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Could not access microphone. Please allow permissions.");
+      console.error("Microphone error:", err);
+      alert("Could not access microphone.");
     }
   };
 
@@ -53,7 +51,6 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscription, onLoadingChang
       reader.readAsDataURL(blob);
       reader.onloadend = async () => {
         const base64String = reader.result as string;
-        // Remove header "data:audio/webm;base64,"
         const base64Content = base64String.split(',')[1];
         const mimeType = base64String.split(';')[0].split(':')[1];
         
@@ -61,14 +58,12 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscription, onLoadingChang
             const text = await transcribeService(base64Content, mimeType);
             onTranscription(text);
         } catch (e) {
-            console.error("API error", e);
-            alert("Failed to transcribe audio.");
+            alert("Transcription failed.");
         } finally {
             onLoadingChange(false);
         }
       };
     } catch (e) {
-        console.error(e);
         onLoadingChange(false);
     }
   };
@@ -76,14 +71,14 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscription, onLoadingChang
   return (
     <button
       onClick={isRecording ? stopRecording : startRecording}
-      className={`p-2 rounded-lg transition-all ${
+      className={`p-2 rounded-lg transition-all duration-200 active:scale-95 ${
         isRecording 
-          ? 'bg-red-500/20 text-red-500 animate-pulse ring-1 ring-red-500/50' 
-          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+          ? 'bg-red-500/10 text-red-400 animate-pulse ring-1 ring-red-500/30' 
+          : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
       }`}
       title={isRecording ? "Stop Recording" : "Record Voice Note"}
     >
-      {isRecording ? <Square size={18} /> : <Mic size={18} />}
+      {isRecording ? <Square size={18} strokeWidth={1.5} /> : <Mic size={18} strokeWidth={1.5} />}
     </button>
   );
 };

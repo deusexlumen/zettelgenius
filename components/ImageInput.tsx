@@ -31,7 +31,6 @@ const ImageInput: React.FC<ImageInputProps> = ({ onAnalysis, onLoadingChange, an
         alert("Failed to analyze image.");
       } finally {
         onLoadingChange(false);
-        // Reset input
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
@@ -41,10 +40,10 @@ const ImageInput: React.FC<ImageInputProps> = ({ onAnalysis, onLoadingChange, an
     <>
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+        className="p-2 rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-all duration-200 active:scale-95"
         title="Analyze Image"
       >
-        <ImageIcon size={18} />
+        <ImageIcon size={18} strokeWidth={1.5} />
       </button>
       <input
         type="file"
