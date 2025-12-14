@@ -21,9 +21,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleUpdateNote = (updatedNote: Note) => {
-    // 1. Save to Disk immediately
     const newNotes = storage.saveNote(updatedNote);
-    // 2. Update State
     setNotes(newNotes);
   };
 
@@ -42,14 +40,33 @@ const App: React.FC = () => {
     setViewMode(AppView.EDITOR);
   };
 
-  // --- Die neue Hyperlink-Engine ---
+  // --- NEUE LÖSCHFUNKTION ---
+  const handleDeleteNote = (id: string) => {
+    if (!window.confirm("Bist du sicher? Diese Notiz wird unwiderruflich gelöscht.")) {
+        return;
+    }
+
+    const updatedNotes = storage.deleteNote(id);
+    setNotes(updatedNotes);
+
+    // WICHTIG: Setze die aktive Notiz neu
+    if (id === activeNoteId) {
+        if (updatedNotes.length > 0) {
+            // Wähle die neueste verbleibende Notiz
+            setActiveNoteId(updatedNotes[0].id);
+        } else {
+            // Keine Notizen mehr, setze auf null
+            setActiveNoteId(null);
+        }
+    }
+  };
+
   const handleWikiLink = (title: string) => {
     const targetNote = notes.find(n => n.title.toLowerCase() === title.toLowerCase());
     if (targetNote) {
         setActiveNoteId(targetNote.id);
-        setViewMode(AppView.EDITOR); // Switch back to editor if in graph
+        setViewMode(AppView.EDITOR);
     } else {
-        // Optional: Create draft if not exists? For now just alert or ignore.
         alert(`Notiz "${title}" nicht gefunden.`);
     }
   };
@@ -89,7 +106,8 @@ const App: React.FC = () => {
                note={activeNote}
                allNotes={notes}
                onUpdate={handleUpdateNote}
-               onWikiLink={handleWikiLink} // Pass the handler
+               onWikiLink={handleWikiLink}
+               onDelete={handleDeleteNote} // HIER WIRD DIE FUNKTION ÜBERGEBEN
              />
            ) : (
              <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-6 animate-in fade-in zoom-in-95 duration-500">
