@@ -1,0 +1,8 @@
+{
+  "name": "ZettelGenius",
+  "description": "A smart Zettelkasten note-taking app powered by Gemini AI. Create interconnected notes, visualize them in a graph, and use AI to research, transcribe audio, and analyze images.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
