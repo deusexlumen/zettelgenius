@@ -11,17 +11,19 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<AppView>(AppView.EDITOR);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Load notes on mount
+  // Initial Load
   useEffect(() => {
     const loadedNotes = storage.getNotes();
     setNotes(loadedNotes);
     if (loadedNotes.length > 0 && !activeNoteId) {
       setActiveNoteId(loadedNotes[0].id);
     }
-  }, []); // Only run once on mount
+  }, []);
 
   const handleUpdateNote = (updatedNote: Note) => {
+    // 1. Save to Disk immediately
     const newNotes = storage.saveNote(updatedNote);
+    // 2. Update State
     setNotes(newNotes);
   };
 
@@ -37,21 +39,32 @@ const App: React.FC = () => {
     const newNotes = storage.saveNote(newNote);
     setNotes(newNotes);
     setActiveNoteId(newNote.id);
-    setViewMode(AppView.EDITOR); // Switch to editor when creating
+    setViewMode(AppView.EDITOR);
+  };
+
+  // --- Die neue Hyperlink-Engine ---
+  const handleWikiLink = (title: string) => {
+    const targetNote = notes.find(n => n.title.toLowerCase() === title.toLowerCase());
+    if (targetNote) {
+        setActiveNoteId(targetNote.id);
+        setViewMode(AppView.EDITOR); // Switch back to editor if in graph
+    } else {
+        // Optional: Create draft if not exists? For now just alert or ignore.
+        alert(`Notiz "${title}" nicht gefunden.`);
+    }
   };
 
   const activeNote = notes.find((n) => n.id === activeNoteId) || notes[0];
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
+    <div className="flex h-screen w-screen bg-[#020617] text-slate-200 font-sans overflow-hidden selection:bg-indigo-500/30 selection:text-indigo-200">
+      
       <Sidebar
         notes={notes}
         activeNoteId={activeNoteId}
         onSelectNote={(id) => {
             setActiveNoteId(id);
-            if (viewMode === AppView.GRAPH) {
-                setViewMode(AppView.EDITOR); // Auto switch to editor on select
-            }
+            if (viewMode === AppView.GRAPH) setViewMode(AppView.EDITOR);
         }}
         onCreateNote={handleCreateNote}
         onToggleView={() => setViewMode(viewMode === AppView.EDITOR ? AppView.GRAPH : AppView.EDITOR)}
@@ -60,7 +73,7 @@ const App: React.FC = () => {
         onSearchChange={setSearchTerm}
       />
 
-      <main className="flex-1 h-full overflow-hidden relative flex flex-col bg-slate-950 shadow-2xl shadow-black z-10">
+      <main className="flex-1 h-full relative flex flex-col bg-[#020617] shadow-2xl z-10 overflow-hidden">
         {viewMode === AppView.GRAPH ? (
           <NetworkGraph 
             notes={notes} 
@@ -72,17 +85,24 @@ const App: React.FC = () => {
         ) : (
            activeNote ? (
              <NoteEditor 
-               key={activeNote.id} // Force re-render on switch to ensure state is fresh
+               key={activeNote.id} 
                note={activeNote}
                allNotes={notes}
-               onUpdate={handleUpdateNote} 
+               onUpdate={handleUpdateNote}
+               onWikiLink={handleWikiLink} // Pass the handler
              />
            ) : (
-             <div className="flex items-center justify-center h-full text-slate-500 bg-slate-950">
-               <div className="text-center">
-                 <p className="mb-2">No note selected</p>
-                 <button onClick={handleCreateNote} className="text-indigo-400 hover:text-indigo-300 hover:underline">Create a new one</button>
+             <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-6 animate-in fade-in zoom-in-95 duration-500">
+               <div className="text-center space-y-2">
+                 <p className="text-xl font-medium text-slate-400">System Ready</p>
+                 <p className="text-sm text-slate-600">Select a node to edit or create a new entry.</p>
                </div>
+               <button 
+                 onClick={handleCreateNote} 
+                 className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+               >
+                 Initialize New Entry
+               </button>
              </div>
            )
         )}

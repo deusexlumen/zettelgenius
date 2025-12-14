@@ -1,27 +1,24 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Note } from '../types';
-import { Sparkles, Search, Loader2, ArrowRight, Type, SplitSquareHorizontal, Eye, EyeOff, Bot, FileText, Wand2 } from 'lucide-react';
+import { Sparkles, Search, Loader2, ArrowRight, Type, SplitSquareHorizontal, Eye, Link as LinkIcon, Save, Bot, Wand2 } from 'lucide-react';
 import * as gemini from '../services/geminiService';
 import VoiceInput from './VoiceInput';
 import ImageInput from './ImageInput';
 import { marked } from 'marked';
 
-/**
- * NoteEditor Component
- * * The primary workspace for knowledge creation.
- * * Features: Dual-pane editing, AI integration, Wiki-style linking.
- */
 interface NoteEditorProps {
   note: Note;
   allNotes: Note[];
   onUpdate: (note: Note) => void;
+  onWikiLink?: (title: string) => void;
 }
 
-const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => {
+const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWikiLink }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [researchQuery, setResearchQuery] = useState('');
   const [showResearchInput, setShowResearchInput] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [lastSaved, setLastSaved] = useState<number>(Date.now());
   
   // --- Autocomplete State ---
   const [suggestions, setSuggestions] = useState<{
@@ -38,7 +35,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
   const researchInputRef = useRef<HTMLInputElement>(null);
   const [cursorTarget, setCursorTarget] = useState<number | null>(null);
 
-  // Restore cursor position after updates
   useEffect(() => {
     if (cursorTarget !== null && textareaRef.current) {
       textareaRef.current.selectionStart = cursorTarget;
@@ -47,14 +43,12 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
     }
   }, [note.content, cursorTarget]);
 
-  // Focus research input
   useEffect(() => {
     if (showResearchInput && researchInputRef.current) {
         researchInputRef.current.focus();
     }
   }, [showResearchInput]);
 
-  // Scroll active suggestion into view
   useEffect(() => {
     if (suggestions.isOpen && listRef.current) {
       const activeItem = listRef.current.children[selectedIndex + 1] as HTMLElement;
@@ -68,9 +62,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdate({ ...note, title: e.target.value });
+    setLastSaved(Date.now());
   };
 
-  // Helper to calculate caret position for the autocomplete popup
   const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => {
     const div = document.createElement('div');
     const style = window.getComputedStyle(element);
@@ -101,8 +95,8 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
     const newVal = e.target.value;
     const selectionStart = e.target.selectionStart;
     onUpdate({ ...note, content: newVal });
+    setLastSaved(Date.now());
     
-    // Check for "[[" trigger
     const textBefore = newVal.slice(0, selectionStart);
     const lastOpen = textBefore.lastIndexOf('[[');
     
@@ -140,6 +134,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
       
       const newContent = prefix + `[[${targetNote.title}]]` + suffix;
       onUpdate({ ...note, content: newContent });
+      setLastSaved(Date.now());
       
       setSuggestions({ ...suggestions, isOpen: false });
       setCursorTarget(prefix.length + targetNote.title.length + 4); 
@@ -165,10 +160,10 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
   const appendToNote = useCallback((text: string) => {
     const newContent = note.content + '\n\n' + text;
     onUpdate({ ...note, content: newContent });
+    setLastSaved(Date.now());
   }, [note, onUpdate]);
 
   // --- AI Actions ---
-
   const handleResearch = async () => {
     if (!researchQuery.trim()) return;
     setAiLoading(true);
@@ -193,6 +188,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
     try {
       const result = await gemini.enhanceText("Enhance this note. Improve clarity, fix grammar, and suggest related Zettelkasten tags.", note.content);
       onUpdate({ ...note, content: result });
+      setLastSaved(Date.now());
     } catch (e) {
       alert("Enhancement failed.");
     } finally {
@@ -200,34 +196,68 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
     }
   };
 
+  const handleAutoConnect = async () => {
+    setAiLoading(true);
+    try {
+        const otherTitles = allNotes.filter(n => n.id !== note.id).map(n => n.title);
+        if (otherTitles.length === 0) {
+            alert("No other notes to link to yet!");
+            return;
+        }
+        const result = await gemini.autoConnect(note.content, otherTitles);
+        onUpdate({ ...note, content: result });
+        setLastSaved(Date.now());
+    } catch (e) {
+        alert("Auto-connect failed.");
+    } finally {
+        setAiLoading(false);
+    }
+  };
+
+  // --- HTML Rendering & Link Interception ---
   const getPreviewHtml = () => {
     try {
-        return marked.parse(note.content) as string;
+        const rawHtml = marked.parse(note.content) as string;
+        // Transform [[Link]] to clickable span
+        // Regex looks for [[Something]] and wraps it in a special span
+        return rawHtml.replace(
+            /\[\[(.*?)\]\]/g, 
+            '<span class="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer font-semibold transition-colors" data-wiki-title="$1">$1</span>'
+        );
     } catch (e) {
         return '<p class="text-red-400">Error rendering preview</p>';
     }
   };
 
+  const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      // Check if clicked element is a wiki link
+      if (target.getAttribute('data-wiki-title')) {
+          const title = target.getAttribute('data-wiki-title');
+          if (title && onWikiLink) {
+              onWikiLink(title);
+          }
+      }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-950 relative overflow-hidden group/editor">
-      {/* Background Ambience */}
       <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-indigo-900/10 blur-[120px] rounded-full pointer-events-none" />
 
       {/* --- Floating Toolbar --- */}
       <div className="h-16 flex items-center px-6 justify-between absolute top-0 left-0 right-0 z-20 transition-all select-none">
-        {/* Background Blur Strip */}
         <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl border-b border-white/5" />
 
         <div className="relative flex items-center gap-4">
              {aiLoading ? (
                 <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)] animate-pulse">
                     <Loader2 size={14} className="animate-spin text-indigo-400" />
-                    <span className="text-xs font-semibold text-indigo-200 tracking-wide">Gemini Processing...</span>
+                    <span className="text-xs font-semibold text-indigo-200 tracking-wide">AI Processing...</span>
                 </div>
             ) : (
                 <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
                     <span className="text-[10px] font-medium text-slate-400 bg-white/5 border border-white/5 px-2 py-1 rounded-md flex items-center gap-1.5 font-mono">
-                       <Type size={10} className="text-slate-500" /> MARKDOWN
+                       <Save size={10} className="text-emerald-500" /> SAVED
                     </span>
                     <div className="h-3 w-px bg-slate-800"></div>
                     <span className="text-[10px] text-slate-500 font-mono tracking-tight">
@@ -237,9 +267,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
             )}
         </div>
         
-        {/* Tools */}
         <div className="relative flex items-center gap-1 bg-slate-900/50 p-1 rounded-xl border border-white/5 shadow-xl shadow-black/20">
-           {/* Research Tool */}
            <div className="relative">
               {showResearchInput && (
                   <div className="absolute right-0 top-full mt-3 flex items-center bg-[#0f172a] shadow-2xl border border-slate-700/80 rounded-xl p-2 z-30 w-80 animate-in slide-in-from-top-1 fade-in duration-200 ring-1 ring-black/50 origin-top-right">
@@ -268,7 +296,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
                     showResearchInput 
                     ? 'bg-indigo-500/20 text-indigo-300' 
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                }`}
+                } active:scale-95`}
                 title="AI Research"
               >
                 <Search size={18} strokeWidth={1.5} />
@@ -290,8 +318,16 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
            <div className="w-px h-4 bg-slate-800 mx-1"></div>
 
            <button 
+             onClick={handleAutoConnect}
+             className="p-2 rounded-lg text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 transition-all duration-200 active:scale-95"
+             title="Auto Connect Links"
+           >
+             <LinkIcon size={18} strokeWidth={1.5} />
+           </button>
+
+           <button 
              onClick={handleEnhance}
-             className="p-2 rounded-lg text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 transition-all duration-200"
+             className="p-2 rounded-lg text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 transition-all duration-200 active:scale-95"
              title="Enhance Note"
            >
              <Sparkles size={18} strokeWidth={1.5} />
@@ -301,7 +337,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
 
            <button
              onClick={() => setShowPreview(!showPreview)}
-             className={`p-2 rounded-lg transition-all duration-200 ${showPreview ? 'bg-white/10 text-slate-200' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+             className={`p-2 rounded-lg transition-all duration-200 ${showPreview ? 'bg-white/10 text-slate-200' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'} active:scale-95`}
              title="Toggle Preview"
            >
              {showPreview ? <SplitSquareHorizontal size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
@@ -309,10 +345,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
         </div>
       </div>
 
-      {/* --- Main Content Area --- */}
       <div className="flex-1 flex pt-16 h-full relative">
-        
-        {/* Editor Column */}
         <div className={`h-full overflow-y-auto custom-scrollbar transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${showPreview ? 'w-1/2 border-r border-white/5' : 'w-full'}`}>
             <div className={`py-12 px-8 md:px-12 mx-auto ${showPreview ? 'max-w-2xl' : 'max-w-3xl'} relative min-h-full transition-all duration-500`}>
                 <input
@@ -332,7 +365,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
                     spellCheck={false}
                 />
                 
-                {/* Autocomplete Popup */}
                 {suggestions.isOpen && filteredSuggestions.length > 0 && (
                     <ul 
                         ref={listRef}
@@ -368,10 +400,13 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate }) => 
             </div>
         </div>
 
-        {/* Preview Column */}
+        {/* --- The PREVIEW Area --- */}
         <div className={`h-full overflow-y-auto custom-scrollbar bg-slate-925 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${showPreview ? 'w-1/2 opacity-100 translate-x-0' : 'w-0 opacity-0 translate-x-10 overflow-hidden absolute right-0'}`}>
              {showPreview && (
-                 <div className="py-12 px-8 md:px-16 prose prose-invert prose-indigo max-w-2xl mx-auto">
+                 <div 
+                    onClick={handlePreviewClick} // INTERCEPT CLICKS HERE
+                    className="py-12 px-8 md:px-16 prose prose-invert prose-indigo max-w-2xl mx-auto"
+                 >
                       <h1 className="mb-8 text-3xl font-bold tracking-tight text-slate-100">{note.title || "Untitled Entry"}</h1>
                       <div 
                         dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} 
