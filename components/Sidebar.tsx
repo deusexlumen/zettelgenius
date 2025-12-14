@@ -1,12 +1,7 @@
 import React from 'react';
 import { Note } from '../types';
-import { Plus, Search, Network, FileText, Hash, Command, Ghost, Calendar } from 'lucide-react';
+import { Plus, Search, Network, FileText, Hash, Command, Ghost, Download } from 'lucide-react';
 
-/**
- * Sidebar Component
- * * Primary navigation and note management interface.
- * Implements "Cognitive Interface" design system with glassmorphism and deep space aesthetics.
- */
 interface SidebarProps {
   notes: Note[];
   activeNoteId: string | null;
@@ -32,6 +27,24 @@ const Sidebar: React.FC<SidebarProps> = ({
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // --- Export Funktion ---
+  const handleExport = () => {
+    // 1. Daten vorbereiten
+    const dataStr = JSON.stringify(notes, null, 2);
+    // 2. Blob erstellen (virtuelle Datei)
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    // 3. Download erzwingen
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `zettelgenius_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    // 4. Aufräumen
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <aside className="w-80 h-full flex flex-col shrink-0 z-30 bg-slate-950 border-r border-white/5 relative overflow-hidden">
@@ -109,7 +122,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                             : 'bg-transparent border-transparent hover:bg-white/[0.02] hover:border-white/5'
                         } active:scale-[0.98]`}
                     >
-                        {/* Active Indicator Line */}
                         {isActive && (
                             <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-indigo-500 rounded-r-full shadow-[0_0_8px_#6366f1]" />
                         )}
@@ -148,15 +160,21 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
       
-      {/* Footer / Status */}
-      <div className="p-4 border-t border-white/5 bg-slate-950/50 backdrop-blur-md shrink-0">
-        <div className="flex items-center justify-between text-[10px] text-slate-600 font-mono uppercase tracking-widest">
-           <span className="flex items-center gap-2">
-             <div className={`w-1.5 h-1.5 rounded-full ${notes.length > 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-slate-700'}`}></div>
-             Local Storage
-           </span>
+      {/* Footer / Status with Export */}
+      <div className="p-4 border-t border-white/5 bg-slate-950/50 backdrop-blur-md shrink-0 flex items-center justify-between z-20">
+        <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest flex items-center gap-2">
+           <span className={`w-1.5 h-1.5 rounded-full ${notes.length > 0 ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]' : 'bg-slate-700'}`}></span>
            <span>{notes.length} Nodes</span>
         </div>
+
+        <button 
+            onClick={handleExport}
+            className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono uppercase tracking-widest hover:text-indigo-400 transition-colors group/export active:scale-95"
+            title="Download JSON Backup"
+        >
+            <Download size={12} className="group-hover/export:translate-y-0.5 transition-transform duration-300" />
+            <span>Backup</span>
+        </button>
       </div>
     </aside>
   );
