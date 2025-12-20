@@ -20,6 +20,12 @@ interface NoteEditorProps {
 }
 
 const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWikiLink, onDelete }) => {
+  // Local state for debounced editing
+  // We initialize from props. key={note.id} in parent ensures re-mount on note switch.
+  const [content, setContent] = useState(note.content);
+  const [title, setTitle] = useState(note.title);
+  const [isSaving, setIsSaving] = useState(false);
+
   const [aiLoading, setAiLoading] = useState(false);
   const [researchQuery, setResearchQuery] = useState('');
   const [showResearchInput, setShowResearchInput] = useState(false);
@@ -28,12 +34,12 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
   
   // --- Autocomplete State ---
   const [suggestions, setSuggestions] = useState<{isOpen: boolean; top: number; left: number; filter: string; matchIndex: number;}>({ isOpen: false, top: 0, left: 0, filter: '', matchIndex: -1 });
-  const [selectedIndex, setSelectedIndex] = useState(0);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const listRef = useRef<HTMLUListElement>(null); 
   const researchInputRef = useRef<HTMLInputElement>(null);
-  const [cursorTarget, setCursorTarget] = useState<number | null>(null);
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNoteRef = useRef<Note | null>(null);
 
   // Focus research input
   useEffect(() => {
@@ -48,15 +54,56 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
     setLastSaveTime(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
   }, []);
 
+  // Debounce Logic
+  const triggerUpdate = useCallback((updatedNote: Note, immediate = false) => {
+    pendingNoteRef.current = updatedNote;
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    if (immediate) {
+        onUpdate(updatedNote);
+        pendingNoteRef.current = null;
+        updateSaveTime();
+        setIsSaving(false);
+        return;
+    }
+
+    setIsSaving(true);
+    timerRef.current = setTimeout(() => {
+        onUpdate(updatedNote);
+        pendingNoteRef.current = null;
+        setIsSaving(false);
+        updateSaveTime();
+        timerRef.current = null;
+    }, 1000);
+  }, [onUpdate, updateSaveTime]);
+
+  // Cleanup on unmount (flush pending changes)
+  useEffect(() => {
+      return () => {
+          if (timerRef.current && pendingNoteRef.current) {
+              clearTimeout(timerRef.current);
+              onUpdate(pendingNoteRef.current);
+          }
+      };
+  }, [onUpdate]);
+
+  const handleDelete = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      pendingNoteRef.current = null;
+      onDelete(note.id);
+  };
+
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onUpdate({ ...note, title: e.target.value });
-    updateSaveTime();
+    const newTitle = e.target.value;
+    setTitle(newTitle);
+    triggerUpdate({ ...note, title: newTitle, content });
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
-    onUpdate({ ...note, content: newVal });
-    updateSaveTime();
+    setContent(newVal);
+    triggerUpdate({ ...note, content: newVal, title });
     
     // Trigger Autocomplete [[...]]
     const selectionStart = e.target.selectionStart;
@@ -86,34 +133,29 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
     document.body.removeChild(div);
     return coords;
   };
+
   const insertSuggestion = (targetNote: Note) => {
       const { matchIndex, filter } = suggestions;
-      const newContent = note.content.slice(0, matchIndex) + `[[${targetNote.title}]]` + note.content.slice(matchIndex + 2 + filter.length);
-      onUpdate({ ...note, content: newContent });
-      updateSaveTime();
+      // Use local content state
+      const newContent = content.slice(0, matchIndex) + `[[${targetNote.title}]]` + content.slice(matchIndex + 2 + filter.length);
+      setContent(newContent);
+      triggerUpdate({ ...note, content: newContent, title });
       setSuggestions({ ...suggestions, isOpen: false });
   };
   
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (suggestions.isOpen && filteredSuggestions.length > 0) {
-          // ... (Keyboard Navigation Logic) ...
-      }
-  };
-
   const filteredSuggestions = allNotes
     .filter(n => n.title.toLowerCase().includes(suggestions.filter.toLowerCase()) && n.id !== note.id)
     .slice(0, 10);
   
   const appendToNote = useCallback((text: string) => {
-    const newContent = note.content + '\n\n' + text;
-    onUpdate({ ...note, content: newContent });
-    updateSaveTime();
-  }, [note, onUpdate, updateSaveTime]);
+    setContent(prevContent => {
+        const newContent = prevContent + '\n\n' + text;
+        triggerUpdate({ ...note, content: newContent, title }, true); // Maybe immediate save for AI/Voice?
+        return newContent;
+    });
+  }, [note, title, triggerUpdate]);
   
-  // --- AI Actions (Neu hinzugefügt) ---
-  const handleResearch = async () => { /* ... Logik ... */ }; // Implementierung hier ausgelassen, da sie in geminiService.ts liegt
-  const handleEnhance = async () => { /* ... Logik ... */ };
-  const handleAutoConnect = async () => { /* ... Logik ... */ };
+  // --- AI Actions ---
 
   const handleResearch = async () => {
     if (!researchQuery.trim()) return;
@@ -137,9 +179,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
   const handleEnhance = async () => {
     setAiLoading(true);
     try {
-      const result = await gemini.enhanceText("Enhance this note. Improve clarity, fix grammar, and suggest related Zettelkasten tags.", note.content);
-      onUpdate({ ...note, content: result });
-      updateSaveTime();
+      const result = await gemini.enhanceText("Enhance this note. Improve clarity, fix grammar, and suggest related Zettelkasten tags.", content);
+      setContent(result);
+      triggerUpdate({ ...note, content: result, title });
     } catch (e) {
       alert("Enhancement failed.");
     } finally {
@@ -155,9 +197,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
             alert("No other notes to link to yet!");
             return;
         }
-        const result = await gemini.autoConnect(note.content, otherTitles);
-        onUpdate({ ...note, content: result });
-        updateSaveTime();
+        const result = await gemini.autoConnect(content, otherTitles);
+        setContent(result);
+        triggerUpdate({ ...note, content: result, title });
     } catch (e) {
         alert("Auto-connect failed.");
     } finally {
@@ -177,7 +219,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
 
   const getPreviewHtml = () => {
     try {
-        const rawHtml = marked.parse(note.content) as string;
+        const rawHtml = marked.parse(content) as string;
         return rawHtml.replace(
             /\[\[(.*?)\]\]/g, 
             '<span class="inline-flex items-center gap-1 text-indigo-400 bg-indigo-400/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-indigo-400/20 transition-colors font-medium select-none" data-wiki-title="$1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>$1</span>'
@@ -202,12 +244,13 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
                 </div>
             ) : (
                 <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-[10px] font-medium text-slate-400 bg-white/5 border border-white/5 px-2 py-1 rounded-md flex items-center gap-1.5 font-mono">
-                       <Save size={10} className="text-emerald-500" /> GESPEICHERT: {lastSaveTime}
+                    <span className={`text-[10px] font-medium ${isSaving ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-slate-400 bg-white/5 border-white/5'} border px-2 py-1 rounded-md flex items-center gap-1.5 font-mono`}>
+                       {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} className="text-emerald-500" />}
+                       {isSaving ? 'SPEICHERT...' : `GESPEICHERT: ${lastSaveTime}`}
                     </span>
                     <div className="h-3 w-px bg-slate-800"></div>
                     <span className="text-[10px] text-slate-500 font-mono tracking-tight">
-                        {note.content.split(/\s+/).filter(Boolean).length} WORDS
+                        {content.split(/\s+/).filter(Boolean).length} WORDS
                     </span>
                 </div>
             )}
@@ -217,7 +260,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
            
            {/* LÖSCHEN BUTTON */}
            <button 
-               onClick={() => onDelete(note.id)} 
+               onClick={handleDelete}
                className="p-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors active:scale-95"
                title="Notiz löschen"
            >
@@ -311,20 +354,20 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
         </div>
       </div>
 
-      {/* Main Area (unverändert) */}
+      {/* Main Area */}
       <div className="flex-1 flex pt-16 h-full relative">
         {/* Editor (Links) */}
         <div className={`h-full transition-all duration-300 ${showPreview ? 'w-1/2 border-r border-white/5' : 'w-full'}`}>
             <input
                 type="text"
-                value={note.title}
+                value={title}
                 onChange={handleTitleChange}
                 placeholder="Untitled Entry"
                 className="w-full text-3xl font-bold text-slate-100 placeholder-slate-700/50 border-none outline-none bg-transparent pt-8 px-8 tracking-tight font-sans"
             />
             <textarea
                 ref={textareaRef}
-                value={note.content}
+                value={content}
                 onChange={handleContentChange}
                 placeholder="Schreibe hier..."
                 className="w-full h-[calc(100%-80px)] p-8 pt-4 bg-transparent text-slate-300 font-mono resize-none outline-none leading-relaxed text-base"
