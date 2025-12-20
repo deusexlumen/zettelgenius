@@ -34,6 +34,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
   
   // --- Autocomplete State ---
   const [suggestions, setSuggestions] = useState<{isOpen: boolean; top: number; left: number; filter: string; matchIndex: number;}>({ isOpen: false, top: 0, left: 0, filter: '', matchIndex: -1 });
+  const [selectedIndex, setSelectedIndex] = useState(0);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const researchInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +115,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
         if (!textAfterOpen.includes(']]') && !textAfterOpen.includes('\n') && textareaRef.current) {
              const coords = getCaretCoordinates(textareaRef.current, lastOpen);
              setSuggestions({ isOpen: true, top: coords.top + coords.height + 10, left: coords.left, filter: textAfterOpen, matchIndex: lastOpen });
+             setSelectedIndex(0);
              return;
         }
     }
@@ -146,6 +148,23 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
   const filteredSuggestions = allNotes
     .filter(n => n.title.toLowerCase().includes(suggestions.filter.toLowerCase()) && n.id !== note.id)
     .slice(0, 10);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (suggestions.isOpen && filteredSuggestions.length > 0) {
+          if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setSelectedIndex((prev) => (prev + 1) % filteredSuggestions.length);
+          } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSelectedIndex((prev) => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+              e.preventDefault();
+              insertSuggestion(filteredSuggestions[selectedIndex]);
+          } else if (e.key === 'Escape') {
+              setSuggestions({ ...suggestions, isOpen: false });
+          }
+      }
+  };
   
   const appendToNote = useCallback((text: string) => {
     setContent(prevContent => {
@@ -369,6 +388,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
                 ref={textareaRef}
                 value={content}
                 onChange={handleContentChange}
+                onKeyDown={handleKeyDown}
                 placeholder="Schreibe hier..."
                 className="w-full h-[calc(100%-80px)] p-8 pt-4 bg-transparent text-slate-300 font-mono resize-none outline-none leading-relaxed text-base"
                 spellCheck={false}
@@ -378,7 +398,11 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
                 <div className="absolute bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 w-64 overflow-hidden" 
                     style={{ top: suggestions.top, left: suggestions.left }}>
                     {filteredSuggestions.map((s, i) => (
-                        <div key={s.id} onClick={() => insertSuggestion(s)} className="px-3 py-2 hover:bg-indigo-500 hover:text-white cursor-pointer text-sm truncate">
+                        <div
+                           key={s.id}
+                           onClick={() => insertSuggestion(s)}
+                           className={`px-3 py-2 cursor-pointer text-sm truncate ${i === selectedIndex ? 'bg-indigo-500 text-white' : 'hover:bg-indigo-500/50 hover:text-white'}`}
+                        >
                             {s.title}
                         </div>
                     ))}
