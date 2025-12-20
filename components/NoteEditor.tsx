@@ -111,10 +111,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note, allNotes, onUpdate, onWik
   }, [note, onUpdate, updateSaveTime]);
   
   // --- AI Actions (Neu hinzugefügt) ---
-  const handleResearch = async () => { /* ... Logik ... */ }; // Implementierung hier ausgelassen, da sie in geminiService.ts liegt
-  const handleEnhance = async () => { /* ... Logik ... */ };
-  const handleAutoConnect = async () => { /* ... Logik ... */ };
-
   const handleResearch = async () => {
     if (!researchQuery.trim()) return;
     setAiLoading(true);

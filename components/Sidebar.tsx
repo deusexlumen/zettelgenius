@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Note } from '../types';
 import { Plus, Search, Network, FileText, Hash, Command, Ghost, Download } from 'lucide-react';
 
@@ -23,6 +23,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   searchTerm,
   onSearchChange,
 }) => {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const filteredNotes = notes.filter((note) =>
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
@@ -90,8 +104,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="relative group">
           <Search className="absolute left-3 top-2.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors duration-200" size={14} />
           <input
+            ref={searchInputRef}
             type="text"
             placeholder="Search knowledge base..."
+            aria-label="Search knowledge base"
+            aria-keyshortcuts="Meta+K"
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/5 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:bg-slate-900/80 focus:border-indigo-500/30 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-200 font-medium"
